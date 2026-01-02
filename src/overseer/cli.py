@@ -1,12 +1,13 @@
 """Overseer CLI interface."""
 
 import argparse
+import asyncio
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
 from .store import JsonTaskStore, SessionStore
-from .models import TaskStatus, TaskType, Origin
+from .models import TaskStatus, TaskType, Origin, JiraConfig
 
 
 def get_stores(root: Path | None = None) -> tuple[JsonTaskStore, SessionStore]:
@@ -306,6 +307,201 @@ def cmd_standup(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_jira_setup(args: argparse.Namespace) -> int:
+    """Configure Jira integration."""
+    task_store, _ = get_stores()
+
+    try:
+        task_store.ensure_initialized()
+        config = task_store.get_config()
+
+        # Get credentials from args or prompt
+        url = args.url
+        email = args.email
+        token = args.token
+        project = args.project
+
+        if not url:
+            url = input("Jira URL (e.g., https://company.atlassian.net): ").strip()
+        if not email:
+            email = input("Your Jira email: ").strip()
+        if not token:
+            token = input("API token: ").strip()
+        if not project:
+            project = input("Default project key (optional, press Enter to skip): ").strip() or None
+
+        if not all([url, email, token]):
+            print("Error: URL, email, and token are required.", file=sys.stderr)
+            return 1
+
+        # Test connection
+        print("Testing connection...")
+        debug = getattr(args, 'debug', False)
+        if debug:
+            print(f"  URL: {url}")
+            print(f"  Email: {email}")
+            print(f"  Token: {'*' * 8}...{token[-4:] if len(token) > 4 else '****'}")
+
+        from .jira import JiraClient
+
+        async def test_connection():
+            async with JiraClient(url, email, token) as client:
+                return await client.test_connection(debug=debug)
+
+        try:
+            success, message = asyncio.run(test_connection())
+            if success:
+                print(f"Connection successful! {message}")
+            else:
+                print(f"Connection failed: {message}", file=sys.stderr)
+                return 1
+        except Exception as e:
+            print(f"Connection error: {type(e).__name__}: {e}", file=sys.stderr)
+            if debug:
+                import traceback
+                traceback.print_exc()
+            return 1
+
+        # Save configuration
+        config.jira = JiraConfig(
+            url=url,
+            email=email,
+            api_token=token,
+            project_key=project,
+        )
+        task_store.save_config(config)
+        print("Jira configuration saved.")
+        return 0
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_jira_pull(args: argparse.Namespace) -> int:
+    """Fetch assigned Jira issues."""
+    task_store, _ = get_stores()
+
+    try:
+        config = task_store.get_config()
+        if not config.jira.is_configured():
+            print("Jira not configured. Run 'overseer jira setup' first.", file=sys.stderr)
+            return 1
+
+        from .jira import JiraClient
+
+        project_key = args.project or config.jira.project_key
+
+        async def fetch_issues():
+            async with JiraClient(
+                config.jira.url, config.jira.email, config.jira.api_token
+            ) as client:
+                return await client.get_assigned_issues(project_key)
+
+        issues = asyncio.run(fetch_issues())
+
+        if not issues:
+            print("No assigned issues found.")
+            return 0
+
+        print(f"## Assigned Issues ({len(issues)})\n")
+        for issue in issues:
+            status_display = f"[{issue.status:12}]"
+            print(f"{status_display} {issue.key}: {issue.summary}")
+
+            if args.import_tasks:
+                existing = [t for t in task_store.list_tasks() if t.jira_key == issue.key]
+                if not existing:
+                    task = task_store.create_task(
+                        title=f"[{issue.key}] {issue.summary}",
+                        task_type=issue.to_local_task_type(),
+                        status=issue.to_local_status(),
+                        created_by=Origin.AGENT,
+                        context=f"Imported from Jira",
+                        jira_key=issue.key,
+                    )
+                    print(f"             -> Imported as {task.id}")
+                else:
+                    print(f"             -> Already linked to {existing[0].id}")
+
+        return 0
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_jira_sync(args: argparse.Namespace) -> int:
+    """Sync task status to Jira."""
+    task_store, _ = get_stores()
+
+    try:
+        config = task_store.get_config()
+        if not config.jira.is_configured():
+            print("Jira not configured. Run 'overseer jira setup' first.", file=sys.stderr)
+            return 1
+
+        task = task_store.get_task(args.task_id)
+        if not task:
+            print(f"Task {args.task_id} not found.", file=sys.stderr)
+            return 1
+
+        if not task.jira_key:
+            print(f"Task {args.task_id} has no linked Jira issue.", file=sys.stderr)
+            return 1
+
+        from .jira import JiraClient, JiraClientError
+
+        # Map Overseer status to Jira transition
+        status_mapping = {
+            TaskStatus.ACTIVE: "In Progress",
+            TaskStatus.DONE: "Done",
+            TaskStatus.BLOCKED: "Blocked",
+            TaskStatus.BACKLOG: "To Do",
+        }
+        target_status = status_mapping.get(task.status, "To Do")
+
+        async def sync_status():
+            async with JiraClient(
+                config.jira.url, config.jira.email, config.jira.api_token
+            ) as client:
+                await client.transition_issue(task.jira_key, target_status)
+
+        try:
+            asyncio.run(sync_status())
+            print(f"Synced {args.task_id} -> {task.jira_key}: status now '{target_status}'")
+            return 0
+        except JiraClientError as e:
+            print(f"Sync failed: {e}", file=sys.stderr)
+            return 1
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_jira(args: argparse.Namespace) -> int:
+    """Handle jira subcommand dispatch."""
+    if args.jira_command == "setup":
+        return cmd_jira_setup(args)
+    elif args.jira_command == "pull":
+        return cmd_jira_pull(args)
+    elif args.jira_command == "sync":
+        return cmd_jira_sync(args)
+    else:
+        print("Usage: overseer jira {setup|pull|sync}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -394,6 +590,33 @@ def main() -> int:
         "--include-backlog", "-b", action="store_true", help="Include backlog preview"
     )
 
+    # jira
+    jira_parser = subparsers.add_parser("jira", help="Jira integration commands")
+    jira_subparsers = jira_parser.add_subparsers(dest="jira_command")
+
+    # jira setup
+    jira_setup_parser = jira_subparsers.add_parser("setup", help="Configure Jira integration")
+    jira_setup_parser.add_argument("--url", help="Jira instance URL")
+    jira_setup_parser.add_argument("--email", help="Your Jira email")
+    jira_setup_parser.add_argument("--token", help="API token")
+    jira_setup_parser.add_argument("--project", help="Default project key")
+    jira_setup_parser.add_argument(
+        "--debug", "-d", action="store_true",
+        help="Show detailed connection debug info"
+    )
+
+    # jira pull
+    jira_pull_parser = jira_subparsers.add_parser("pull", help="Fetch assigned Jira issues")
+    jira_pull_parser.add_argument("--project", "-p", help="Project key filter")
+    jira_pull_parser.add_argument(
+        "--import", "-i", dest="import_tasks", action="store_true",
+        help="Import as local tasks"
+    )
+
+    # jira sync
+    jira_sync_parser = jira_subparsers.add_parser("sync", help="Sync task status to Jira")
+    jira_sync_parser.add_argument("task_id", help="Task ID to sync")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -412,6 +635,7 @@ def main() -> int:
         "report": cmd_report,
         "serve": cmd_serve,
         "standup": cmd_standup,
+        "jira": cmd_jira,
     }
 
     handler = handlers.get(args.command)

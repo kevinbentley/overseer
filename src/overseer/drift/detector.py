@@ -1,10 +1,16 @@
 """Drift detection logic for comparing prompts to active tasks."""
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from ..models import Task
+
+if TYPE_CHECKING:
+    from ..jira import JiraClient, JiraIssue
 
 
 class MatchStrength(Enum):
@@ -24,6 +30,7 @@ class DriftResult:
     match_strength: MatchStrength = MatchStrength.NONE
     suggested_title: str | None = None
     match_reasons: list[str] = field(default_factory=list)
+    jira_issue: JiraIssue | None = None
 
     @property
     def is_drift(self) -> bool:
@@ -32,13 +39,25 @@ class DriftResult:
 
     def format_result(self) -> str:
         """Format the result for display."""
-        if self.matched_task:
-            reasons = ", ".join(self.match_reasons) if self.match_reasons else "keyword match"
+        if self.jira_issue and not self.matched_task:
+            # Jira-only match
+            reasons = ", ".join(self.match_reasons) if self.match_reasons else "Jira search"
             return (
+                f"Found Jira issue: {self.jira_issue.key}\n"
+                f"Summary: {self.jira_issue.summary}\n"
+                f"Status: {self.jira_issue.status} | Type: {self.jira_issue.issue_type}\n"
+                f"Reason: {reasons}"
+            )
+        elif self.matched_task:
+            reasons = ", ".join(self.match_reasons) if self.match_reasons else "keyword match"
+            result = (
                 f"Matched {self.matched_task.id}: {self.matched_task.title}\n"
                 f"Confidence: {self.confidence:.0%} ({self.match_strength.value})\n"
                 f"Reason: {reasons}"
             )
+            if self.matched_task.jira_key:
+                result += f"\nJira: {self.matched_task.jira_key}"
+            return result
         else:
             return (
                 f"No matching task found.\n"
@@ -72,9 +91,22 @@ REFACTOR_INDICATORS = {"refactor", "clean", "improve", "optimize", "update", "ch
 class DriftDetector:
     """Detects scope drift by comparing prompts to active tasks."""
 
-    def __init__(self, tasks: list[Task]):
-        """Initialize with a list of active tasks."""
+    def __init__(
+        self,
+        tasks: list[Task],
+        jira_client: JiraClient | None = None,
+        jira_project_key: str | None = None,
+    ):
+        """Initialize with a list of active tasks.
+
+        Args:
+            tasks: List of active tasks to match against.
+            jira_client: Optional Jira client for fallback search.
+            jira_project_key: Optional Jira project key to filter searches.
+        """
         self.tasks = tasks
+        self.jira_client = jira_client
+        self.jira_project_key = jira_project_key
 
     def check_drift(self, prompt: str) -> DriftResult:
         """
@@ -132,6 +164,66 @@ class DriftDetector:
             )
 
         return best_match
+
+    async def check_drift_async(self, prompt: str) -> DriftResult:
+        """
+        Check if a prompt matches any active task, falling back to Jira search.
+
+        This async version first runs the local task check, then if no strong
+        match is found and a Jira client is configured, searches Jira for
+        potentially related issues.
+
+        Returns a DriftResult with match information.
+        """
+        # First, check local tasks
+        result = self.check_drift(prompt)
+
+        # If we found a strong match or Jira isn't configured, return early
+        if result.match_strength == MatchStrength.STRONG or not self.jira_client:
+            return result
+
+        # For weak or no match, try Jira fallback
+        if result.match_strength == MatchStrength.NONE:
+            jira_result = await self._check_jira_fallback(prompt)
+            if jira_result:
+                return jira_result
+
+        return result
+
+    async def _check_jira_fallback(self, prompt: str) -> DriftResult | None:
+        """Search Jira for matching issues when no local match found."""
+        if not self.jira_client:
+            return None
+
+        # Extract meaningful search terms
+        keywords = self._extract_keywords(prompt)
+        if len(keywords) < 2:
+            return None
+
+        # Build search query from top keywords
+        search_query = " ".join(list(keywords)[:5])
+
+        try:
+            issues = await self.jira_client.search_issues(
+                search_query, self.jira_project_key
+            )
+        except Exception:
+            # Silently fail on Jira errors - local check already returned
+            return None
+
+        if not issues:
+            return None
+
+        # Return the best Jira match
+        best_issue = issues[0]
+        return DriftResult(
+            matched_task=None,
+            confidence=0.6,  # Moderate confidence for Jira matches
+            match_strength=MatchStrength.WEAK,
+            suggested_title=None,
+            match_reasons=[f"Jira search match: {best_issue.key}"],
+            jira_issue=best_issue,
+        )
 
     def _check_explicit_reference(self, prompt: str) -> DriftResult | None:
         """Check for explicit task ID references like 'TASK-42'."""

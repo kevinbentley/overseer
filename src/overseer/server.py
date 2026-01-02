@@ -10,6 +10,7 @@ from mcp.types import Tool, TextContent
 from .store import JsonTaskStore, SessionStore
 from .models import TaskStatus, TaskType, Origin
 from .drift import DriftDetector
+from .jira import JiraClient, JiraClientError, JiraNotFoundError
 
 
 def get_root_path() -> Path:
@@ -144,6 +145,56 @@ async def list_tools() -> list[Tool]:
                 "required": ["prompt"],
             },
         ),
+        Tool(
+            name="pull_jira_issues",
+            description="Fetch your assigned Jira issues. Optionally import them as local tasks. Requires Jira to be configured.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "import_as_tasks": {
+                        "type": "boolean",
+                        "description": "If true, create local tasks for each Jira issue. Default: false (list only).",
+                        "default": False,
+                    },
+                    "project_key": {
+                        "type": "string",
+                        "description": "Filter by Jira project key (uses default from config if not specified).",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="link_jira_issue",
+            description="Link a local task to a Jira issue by key. This allows syncing status between Overseer and Jira.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Local task ID (e.g., TASK-1).",
+                    },
+                    "jira_key": {
+                        "type": "string",
+                        "description": "Jira issue key (e.g., PROJ-123).",
+                    },
+                },
+                "required": ["task_id", "jira_key"],
+            },
+        ),
+        Tool(
+            name="sync_jira_status",
+            description="Sync a local task's status to its linked Jira issue. Only works for tasks with a jira_key.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Local task ID (e.g., TASK-1).",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        ),
     ]
 
 
@@ -162,6 +213,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return await handle_log_work_session(session_store, arguments)
     elif name == "check_drift":
         return await handle_check_drift(task_store, arguments)
+    elif name == "pull_jira_issues":
+        return await handle_pull_jira_issues(task_store, arguments)
+    elif name == "link_jira_issue":
+        return await handle_link_jira_issue(task_store, arguments)
+    elif name == "sync_jira_status":
+        return await handle_sync_jira_status(task_store, arguments)
     else:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -295,6 +352,30 @@ async def handle_check_drift(
         active_tasks = store.list_tasks(status=TaskStatus.ACTIVE)
 
         if not active_tasks:
+            # Even with no local tasks, try Jira if configured
+            config = store.get_config()
+            if config.jira.is_configured():
+                # Create detector with Jira fallback only
+                async with JiraClient(
+                    config.jira.url, config.jira.email, config.jira.api_token
+                ) as jira_client:
+                    detector = DriftDetector(
+                        [], jira_client=jira_client, jira_project_key=config.jira.project_key
+                    )
+                    result = await detector.check_drift_async(prompt)
+
+                    if result.jira_issue:
+                        return [
+                            TextContent(
+                                type="text",
+                                text=(
+                                    f"No local tasks, but found related Jira issue!\n"
+                                    f"{result.format_result()}\n\n"
+                                    f"Use pull_jira_issues to import it, or link_jira_issue to link it."
+                                ),
+                            )
+                        ]
+
             return [
                 TextContent(
                     type="text",
@@ -305,9 +386,25 @@ async def handle_check_drift(
                 )
             ]
 
-        # Run drift detection
-        detector = DriftDetector(active_tasks)
-        result = detector.check_drift(prompt)
+        # Load Jira config for fallback
+        config = store.get_config()
+        jira_client = None
+
+        if config.jira.is_configured():
+            # Run with Jira fallback
+            async with JiraClient(
+                config.jira.url, config.jira.email, config.jira.api_token
+            ) as jira_client:
+                detector = DriftDetector(
+                    active_tasks,
+                    jira_client=jira_client,
+                    jira_project_key=config.jira.project_key,
+                )
+                result = await detector.check_drift_async(prompt)
+        else:
+            # Run without Jira
+            detector = DriftDetector(active_tasks)
+            result = detector.check_drift(prompt)
 
         # Format response based on match strength
         if result.match_strength.value == "strong":
@@ -322,6 +419,18 @@ async def handle_check_drift(
                 )
             ]
         elif result.match_strength.value == "weak":
+            # Check if this is a Jira-only match
+            if result.jira_issue and not result.matched_task:
+                return [
+                    TextContent(
+                        type="text",
+                        text=(
+                            f"~ Found related Jira issue!\n"
+                            f"{result.format_result()}\n\n"
+                            f"Use pull_jira_issues to import it, or link_jira_issue to link it to a local task."
+                        ),
+                    )
+                ]
             return [
                 TextContent(
                     type="text",
@@ -350,6 +459,174 @@ async def handle_check_drift(
         return [TextContent(type="text", text=f"Error: {e}")]
     except Exception as e:
         return [TextContent(type="text", text=f"Error checking drift: {e}")]
+
+
+async def handle_pull_jira_issues(
+    store: JsonTaskStore, arguments: dict
+) -> list[TextContent]:
+    """Handle pull_jira_issues tool call."""
+    try:
+        config = store.get_config()
+
+        if not config.jira.is_configured():
+            return [
+                TextContent(
+                    type="text",
+                    text="Jira is not configured. Run 'overseer jira setup' first.",
+                )
+            ]
+
+        import_tasks = arguments.get("import_as_tasks", False)
+        project_key = arguments.get("project_key") or config.jira.project_key
+
+        async with JiraClient(
+            config.jira.url, config.jira.email, config.jira.api_token
+        ) as client:
+            issues = await client.get_assigned_issues(project_key)
+
+        if not issues:
+            return [TextContent(type="text", text="No assigned issues found.")]
+
+        lines = [f"## Assigned Jira Issues ({len(issues)})", ""]
+        imported_count = 0
+
+        for issue in issues:
+            lines.append(f"**{issue.key}**: {issue.summary}")
+            lines.append(f"  Status: {issue.status} | Type: {issue.issue_type}")
+
+            if import_tasks:
+                # Check if already linked
+                existing = [t for t in store.list_tasks() if t.jira_key == issue.key]
+                if not existing:
+                    task = store.create_task(
+                        title=f"[{issue.key}] {issue.summary}",
+                        task_type=issue.to_local_task_type(),
+                        status=issue.to_local_status(),
+                        created_by=Origin.AGENT,
+                        context=f"Imported from Jira: {issue.key}",
+                        jira_key=issue.key,
+                    )
+                    imported_count += 1
+                    lines.append(f"  -> Imported as {task.id}")
+                else:
+                    lines.append(f"  -> Already linked to {existing[0].id}")
+
+            lines.append("")
+
+        if import_tasks:
+            lines.append(f"Imported {imported_count} new task(s).")
+
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    except JiraClientError as e:
+        return [TextContent(type="text", text=f"Jira error: {e}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+
+async def handle_link_jira_issue(
+    store: JsonTaskStore, arguments: dict
+) -> list[TextContent]:
+    """Handle link_jira_issue tool call."""
+    try:
+        config = store.get_config()
+
+        if not config.jira.is_configured():
+            return [
+                TextContent(
+                    type="text",
+                    text="Jira is not configured. Run 'overseer jira setup' first.",
+                )
+            ]
+
+        task_id = arguments["task_id"]
+        jira_key = arguments["jira_key"].upper()
+
+        task = store.get_task(task_id)
+        if not task:
+            return [TextContent(type="text", text=f"Task {task_id} not found.")]
+
+        # Verify Jira issue exists
+        async with JiraClient(
+            config.jira.url, config.jira.email, config.jira.api_token
+        ) as client:
+            try:
+                issue = await client.get_issue(jira_key)
+            except JiraNotFoundError:
+                return [
+                    TextContent(type="text", text=f"Jira issue {jira_key} not found.")
+                ]
+
+        # Update task with jira_key
+        store.update_task(task_id, jira_key=jira_key)
+
+        return [
+            TextContent(
+                type="text",
+                text=f"Linked {task_id} to {jira_key}: {issue.summary}",
+            )
+        ]
+
+    except JiraClientError as e:
+        return [TextContent(type="text", text=f"Jira error: {e}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+
+async def handle_sync_jira_status(
+    store: JsonTaskStore, arguments: dict
+) -> list[TextContent]:
+    """Handle sync_jira_status tool call."""
+    try:
+        config = store.get_config()
+
+        if not config.jira.is_configured():
+            return [
+                TextContent(
+                    type="text",
+                    text="Jira is not configured. Run 'overseer jira setup' first.",
+                )
+            ]
+
+        task_id = arguments["task_id"]
+        task = store.get_task(task_id)
+
+        if not task:
+            return [TextContent(type="text", text=f"Task {task_id} not found.")]
+
+        if not task.jira_key:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Task {task_id} has no linked Jira issue. Use link_jira_issue first.",
+                )
+            ]
+
+        # Map Overseer status to Jira transition name
+        status_mapping = {
+            TaskStatus.ACTIVE: "In Progress",
+            TaskStatus.DONE: "Done",
+            TaskStatus.BLOCKED: "Blocked",
+            TaskStatus.BACKLOG: "To Do",
+        }
+        target_status = status_mapping.get(task.status, "To Do")
+
+        async with JiraClient(
+            config.jira.url, config.jira.email, config.jira.api_token
+        ) as client:
+            await client.transition_issue(task.jira_key, target_status)
+
+        return [
+            TextContent(
+                type="text",
+                text=f"Synced {task_id} -> {task.jira_key}: status now '{target_status}'",
+            )
+        ]
+
+    except JiraClientError as e:
+        return [TextContent(type="text", text=f"Jira error: {e}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
 
 
 async def run_server():

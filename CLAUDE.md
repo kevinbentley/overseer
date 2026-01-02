@@ -15,9 +15,10 @@ This file provides guidance to Claude Code when working with the Overseer projec
 ├── src/overseer/
 │   ├── server.py               # MCP server implementation
 │   ├── cli.py                  # CLI interface
-│   ├── models/                 # Data models (Task, WorkSession, Config)
+│   ├── models/                 # Data models (Task, WorkSession, Config, JiraConfig)
 │   ├── store/                  # JSON store implementation
-│   └── drift/                  # Drift detection logic
+│   ├── drift/                  # Drift detection logic
+│   └── jira/                   # Jira API client
 ├── tests/                      # pytest test suite
 └── .claude/agents/             # Specialized agent definitions
 ```
@@ -52,6 +53,12 @@ overseer log "Summary" --task TASK-1  # Log work session
 overseer report --today              # Daily report
 overseer standup                     # Daily standup report
 overseer serve                       # Start MCP server
+
+# Jira integration
+overseer jira setup                  # Configure Jira credentials
+overseer jira pull                   # List assigned Jira issues
+overseer jira pull --import          # Import issues as local tasks
+overseer jira sync TASK-1            # Push task status to Jira
 ```
 
 ## MCP Tools
@@ -63,6 +70,9 @@ When the MCP server is connected, these tools are available:
 - **update_task_status** - Change task status (done, blocked, etc.)
 - **log_work_session** - Record work summaries with file tracking
 - **check_drift** - Check if a prompt matches active tasks (drift detection)
+- **pull_jira_issues** - Fetch assigned Jira issues, optionally import as tasks
+- **link_jira_issue** - Link a local task to a Jira issue
+- **sync_jira_status** - Push local task status to linked Jira issue
 
 ## Data Store
 
@@ -89,6 +99,20 @@ Data is stored in `.overseer/` directory:
 - Keyword overlap with title/context
 - File context matching (linked_files)
 - Task type inference (bug, feature, etc.)
+- Jira fallback search (when no local match and Jira is configured)
+
+### Jira Integration
+
+When Jira is configured (`overseer jira setup`), drift detection automatically searches Jira when no local task matches. This helps catch work that exists in Jira but hasn't been imported locally.
+
+**Workflow:**
+1. User asks to work on something
+2. `check_drift` finds no local match
+3. Jira is searched for related issues
+4. If found, suggest importing or linking the Jira issue
+5. User can then proceed with the tracked work
+
+**Status sync:** When marking tasks done, use `sync_jira_status` to push the status to Jira.
 
 ## Specialized Agents
 
@@ -102,3 +126,4 @@ Data is stored in `.overseer/` directory:
 - Atomic file writes prevent corruption
 - The `.overseer/` directory should be committed to git
 - Set `OVERSEER_ROOT` environment variable to specify project root
+- Jira credentials are stored in `.overseer/config.json` - consider adding to `.gitignore` if sensitive

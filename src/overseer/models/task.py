@@ -44,6 +44,7 @@ class Task:
     updated_at: datetime
     context: str | None = None
     linked_files: list[str] = field(default_factory=list)
+    jira_key: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert task to dictionary for JSON serialization."""
@@ -55,6 +56,7 @@ class Task:
             "created_by": self.created_by.value,
             "context": self.context,
             "linked_files": self.linked_files,
+            "jira_key": self.jira_key,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -70,6 +72,7 @@ class Task:
             created_by=Origin(data["created_by"]),
             context=data.get("context"),
             linked_files=data.get("linked_files", []),
+            jira_key=data.get("jira_key"),
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
         )
@@ -88,4 +91,6 @@ class Task:
             result += f"\n    Context: {self.context}"
         if self.linked_files:
             result += f"\n    Files: {', '.join(self.linked_files)}"
+        if self.jira_key:
+            result += f"\n    Jira: {self.jira_key}"
         return result

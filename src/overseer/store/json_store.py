@@ -100,6 +100,7 @@ class JsonTaskStore:
         created_by: Origin = Origin.AGENT,
         context: str | None = None,
         linked_files: list[str] | None = None,
+        jira_key: str | None = None,
     ) -> Task:
         """Create a new task."""
         data = self._load_tasks_data()
@@ -114,6 +115,7 @@ class JsonTaskStore:
             created_by=created_by,
             context=context,
             linked_files=linked_files or [],
+            jira_key=jira_key,
             created_at=now,
             updated_at=now,
         )
