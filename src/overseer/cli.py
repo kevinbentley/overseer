@@ -218,6 +218,94 @@ def cmd_log(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_standup(args: argparse.Namespace) -> int:
+    """Generate a daily standup report."""
+    task_store, session_store = get_stores()
+
+    try:
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        lines = [f"## Daily Standup - {today.isoformat()}", ""]
+
+        # Completed yesterday (tasks marked done yesterday or sessions from yesterday)
+        yesterday_sessions = session_store.get_sessions_for_day(yesterday)
+        done_tasks = task_store.list_tasks(status=TaskStatus.DONE)
+
+        # Filter done tasks that were updated yesterday
+        recently_done = [
+            t for t in done_tasks
+            if t.updated_at.date() == yesterday
+        ]
+
+        if recently_done or yesterday_sessions:
+            lines.append("### Completed Yesterday")
+            for task in recently_done:
+                lines.append(f"- [x] {task.id}: {task.title}")
+            for session in yesterday_sessions:
+                if not any(session.task_id == t.id for t in recently_done):
+                    lines.append(f"- {session.summary}")
+            lines.append("")
+
+        # In Progress (active tasks)
+        active_tasks = task_store.list_tasks(status=TaskStatus.ACTIVE)
+        if active_tasks:
+            lines.append("### In Progress")
+            for task in active_tasks:
+                lines.append(f"- [>] {task.id}: {task.title} ({task.type.value})")
+                if task.context:
+                    # Show first line of context
+                    first_line = task.context.split("\n")[0]
+                    if len(first_line) > 60:
+                        first_line = first_line[:57] + "..."
+                    lines.append(f"    {first_line}")
+            lines.append("")
+
+        # Blocked
+        blocked_tasks = task_store.list_tasks(status=TaskStatus.BLOCKED)
+        if blocked_tasks:
+            lines.append("### Blocked")
+            for task in blocked_tasks:
+                lines.append(f"- [!] {task.id}: {task.title}")
+                if task.context and "Blocked:" in task.context:
+                    # Extract blocking reason
+                    for line in task.context.split("\n"):
+                        if line.startswith("Blocked:"):
+                            lines.append(f"    {line}")
+                            break
+            lines.append("")
+
+        # Today's sessions so far
+        today_sessions = session_store.get_sessions_for_day(today)
+        if today_sessions:
+            lines.append("### Today's Progress")
+            for session in today_sessions:
+                task_ref = f" ({session.task_id})" if session.task_id else ""
+                lines.append(f"- {session.summary}{task_ref}")
+            lines.append("")
+
+        # Backlog preview
+        backlog_tasks = task_store.list_tasks(status=TaskStatus.BACKLOG)
+        if backlog_tasks and args.include_backlog:
+            lines.append("### Backlog")
+            for task in backlog_tasks[:5]:  # Show top 5
+                lines.append(f"- [ ] {task.id}: {task.title} ({task.type.value})")
+            if len(backlog_tasks) > 5:
+                lines.append(f"    ... and {len(backlog_tasks) - 5} more")
+            lines.append("")
+
+        # Summary
+        if not any([recently_done, yesterday_sessions, active_tasks, blocked_tasks, today_sessions]):
+            lines.append("No activity to report. Use `overseer add` to create tasks.")
+
+        print("\n".join(lines))
+        return 0
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -300,6 +388,12 @@ def main() -> int:
     # serve
     subparsers.add_parser("serve", help="Start the MCP server")
 
+    # standup
+    standup_parser = subparsers.add_parser("standup", help="Generate daily standup report")
+    standup_parser.add_argument(
+        "--include-backlog", "-b", action="store_true", help="Include backlog preview"
+    )
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -317,6 +411,7 @@ def main() -> int:
         "log": cmd_log,
         "report": cmd_report,
         "serve": cmd_serve,
+        "standup": cmd_standup,
     }
 
     handler = handlers.get(args.command)
