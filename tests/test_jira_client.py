@@ -247,3 +247,97 @@ class TestJiraClient:
                 await client.get_assigned_issues()
 
         assert "500" in str(exc_info.value)
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_create_issue(self, client):
+        """Test creating a new issue."""
+        # Mock POST to create issue
+        respx.post("https://test.atlassian.net/rest/api/3/issue").mock(
+            return_value=httpx.Response(
+                201,
+                json={"id": "10001", "key": "PROJ-999", "self": "https://test.atlassian.net/rest/api/3/issue/10001"},
+            )
+        )
+
+        # Mock GET to fetch the created issue details
+        respx.get("https://test.atlassian.net/rest/api/3/issue/PROJ-999").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "key": "PROJ-999",
+                    "fields": {
+                        "summary": "New task",
+                        "status": {"name": "To Do"},
+                        "issuetype": {"name": "Task"},
+                        "assignee": None,
+                    },
+                },
+            )
+        )
+
+        async with client:
+            issue = await client.create_issue(
+                project_key="PROJ",
+                summary="New task",
+                issue_type="Task",
+                description="Task description",
+            )
+
+        assert issue.key == "PROJ-999"
+        assert issue.summary == "New task"
+        assert issue.issue_type == "Task"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_create_issue_minimal(self, client):
+        """Test creating an issue with minimal fields."""
+        respx.post("https://test.atlassian.net/rest/api/3/issue").mock(
+            return_value=httpx.Response(
+                201,
+                json={"id": "10002", "key": "PROJ-1000"},
+            )
+        )
+
+        respx.get("https://test.atlassian.net/rest/api/3/issue/PROJ-1000").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "key": "PROJ-1000",
+                    "fields": {
+                        "summary": "Simple task",
+                        "status": {"name": "To Do"},
+                        "issuetype": {"name": "Task"},
+                        "assignee": None,
+                    },
+                },
+            )
+        )
+
+        async with client:
+            issue = await client.create_issue(
+                project_key="PROJ",
+                summary="Simple task",
+            )
+
+        assert issue.key == "PROJ-1000"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_create_issue_error(self, client):
+        """Test error handling when creating an issue fails."""
+        respx.post("https://test.atlassian.net/rest/api/3/issue").mock(
+            return_value=httpx.Response(
+                400,
+                json={"errorMessages": ["Field 'summary' is required"]},
+            )
+        )
+
+        async with client:
+            with pytest.raises(JiraClientError) as exc_info:
+                await client.create_issue(
+                    project_key="PROJ",
+                    summary="",
+                )
+
+        assert "400" in str(exc_info.value)

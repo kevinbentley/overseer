@@ -37,6 +37,12 @@ This file provides guidance to Claude Code when working with the Overseer projec
 - Use `mcp__overseer__pull_jira_issues` to see assigned Jira issues
 - Use `mcp__overseer__link_jira_issue` to connect local tasks to Jira
 - Use `mcp__overseer__sync_jira_status` to push status updates to Jira
+- Use `mcp__overseer__push_task_to_jira` to create a Jira issue from a local task
+
+**Automatic Jira sync workflow:**
+1. When you create a new task locally, ask the user if they want it pushed to Jira
+2. When marking a task as `done`, automatically call `sync_jira_status` if the task has a `jira_key`
+3. For significant features or bugs, proactively suggest pushing to Jira for team visibility
 
 ---
 
@@ -97,6 +103,7 @@ overseer jira setup                  # Configure Jira credentials
 overseer jira pull                   # List assigned Jira issues
 overseer jira pull --import          # Import issues as local tasks
 overseer jira sync TASK-1            # Push task status to Jira
+overseer jira push TASK-1            # Create Jira issue from local task
 ```
 
 ## MCP Tools
@@ -111,6 +118,7 @@ When the MCP server is connected, these tools are available:
 - **pull_jira_issues** - Fetch assigned Jira issues, optionally import as tasks
 - **link_jira_issue** - Link a local task to a Jira issue
 - **sync_jira_status** - Push local task status to linked Jira issue
+- **push_task_to_jira** - Create a new Jira issue from a local task and link them
 
 ## Data Store
 
@@ -143,12 +151,18 @@ Data is stored in `.overseer/` directory:
 
 When Jira is configured (`overseer jira setup`), drift detection automatically searches Jira when no local task matches. This helps catch work that exists in Jira but hasn't been imported locally.
 
-**Workflow:**
+**Pull workflow (Jira → Local):**
 1. User asks to work on something
 2. `check_drift` finds no local match
 3. Jira is searched for related issues
 4. If found, suggest importing or linking the Jira issue
 5. User can then proceed with the tracked work
+
+**Push workflow (Local → Jira):**
+1. Create a local task with `create_task`
+2. Use `push_task_to_jira` to create matching Jira issue
+3. Task is automatically linked to the new Jira issue
+4. Status updates sync bidirectionally
 
 **Status sync:** When marking tasks done, use `sync_jira_status` to push the status to Jira.
 

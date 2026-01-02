@@ -195,6 +195,24 @@ async def list_tools() -> list[Tool]:
                 "required": ["task_id"],
             },
         ),
+        Tool(
+            name="push_task_to_jira",
+            description="Create a new Jira issue from a local task. The task will be linked to the new Jira issue.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Local task ID (e.g., TASK-1).",
+                    },
+                    "project_key": {
+                        "type": "string",
+                        "description": "Jira project key (uses default from config if not specified).",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        ),
     ]
 
 
@@ -219,6 +237,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return await handle_link_jira_issue(task_store, arguments)
     elif name == "sync_jira_status":
         return await handle_sync_jira_status(task_store, arguments)
+    elif name == "push_task_to_jira":
+        return await handle_push_task_to_jira(task_store, arguments)
     else:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -620,6 +640,103 @@ async def handle_sync_jira_status(
             TextContent(
                 type="text",
                 text=f"Synced {task_id} -> {task.jira_key}: status now '{target_status}'",
+            )
+        ]
+
+    except JiraClientError as e:
+        return [TextContent(type="text", text=f"Jira error: {e}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+
+async def handle_push_task_to_jira(
+    store: JsonTaskStore, arguments: dict
+) -> list[TextContent]:
+    """Handle push_task_to_jira tool call."""
+    try:
+        config = store.get_config()
+
+        if not config.jira.is_configured():
+            return [
+                TextContent(
+                    type="text",
+                    text="Jira is not configured. Run 'overseer jira setup' first.",
+                )
+            ]
+
+        task_id = arguments["task_id"]
+        task = store.get_task(task_id)
+
+        if not task:
+            return [TextContent(type="text", text=f"Task {task_id} not found.")]
+
+        if task.jira_key:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Task {task_id} is already linked to {task.jira_key}.",
+                )
+            ]
+
+        project_key = arguments.get("project_key") or config.jira.project_key
+        if not project_key:
+            return [
+                TextContent(
+                    type="text",
+                    text="No project key specified and no default configured. "
+                    "Provide project_key or run 'overseer jira setup' with a default project.",
+                )
+            ]
+
+        # Map TaskType to preferred Jira issue types (in order of preference)
+        type_preferences = {
+            TaskType.BUG: ["Bug", "Defect", "Task"],
+            TaskType.FEATURE: ["Story", "New Feature", "Feature", "Task"],
+            TaskType.DEBT: ["Task", "Improvement", "Story"],
+            TaskType.CHORE: ["Task", "Chore", "Story"],
+        }
+        preferred_types = type_preferences.get(task.type, ["Task"])
+
+        async with JiraClient(
+            config.jira.url, config.jira.email, config.jira.api_token
+        ) as client:
+            # Get available issue types for the project
+            available_types = await client.get_project_issue_types(project_key)
+
+            # Find the first preferred type that's available
+            issue_type = None
+            for pref in preferred_types:
+                if pref in available_types:
+                    issue_type = pref
+                    break
+
+            if not issue_type:
+                # Fall back to first available non-subtask type
+                if available_types:
+                    issue_type = available_types[0]
+                else:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"No issue types available in project {project_key}. "
+                            f"Check project permissions.",
+                        )
+                    ]
+
+            issue = await client.create_issue(
+                project_key=project_key,
+                summary=task.title,
+                issue_type=issue_type,
+                description=task.context,
+            )
+
+        # Link the task to the new Jira issue
+        store.update_task(task_id, jira_key=issue.key)
+
+        return [
+            TextContent(
+                type="text",
+                text=f"Created {issue.key}: {issue.summary}\nLinked to {task_id}",
             )
         ]
 

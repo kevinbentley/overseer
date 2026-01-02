@@ -190,6 +190,65 @@ class JiraClient:
         )
         return True
 
+    async def get_project_issue_types(self, project_key: str) -> list[str]:
+        """Get available issue types for a project.
+
+        Args:
+            project_key: Project key (e.g., PROJ)
+
+        Returns:
+            List of issue type names available in the project
+        """
+        data = await self._request(
+            "GET",
+            f"/project/{project_key}",
+        )
+        issue_types = data.get("issueTypes", [])
+        return [it["name"] for it in issue_types if not it.get("subtask", False)]
+
+    async def create_issue(
+        self,
+        project_key: str,
+        summary: str,
+        issue_type: str = "Task",
+        description: str | None = None,
+    ) -> JiraIssue:
+        """Create a new Jira issue.
+
+        Args:
+            project_key: Project key (e.g., PROJ)
+            summary: Issue title/summary
+            issue_type: Issue type name (e.g., Task, Bug, Story)
+            description: Optional description text
+
+        Returns:
+            Created JiraIssue object
+        """
+        # Build the issue payload
+        fields: dict[str, Any] = {
+            "project": {"key": project_key},
+            "summary": summary,
+            "issuetype": {"name": issue_type},
+        }
+
+        # Add description in Atlassian Document Format (ADF)
+        if description:
+            fields["description"] = {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": description}],
+                    }
+                ],
+            }
+
+        data = await self._request("POST", "/issue", json={"fields": fields})
+
+        # Fetch the created issue to get full details
+        return await self.get_issue(data["key"])
+
     async def test_connection(self, debug: bool = False) -> tuple[bool, str]:
         """Test if the credentials are valid.
 

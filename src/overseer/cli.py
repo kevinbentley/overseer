@@ -489,6 +489,75 @@ def cmd_jira_sync(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_jira_push(args: argparse.Namespace) -> int:
+    """Push a local task to Jira as a new issue."""
+    task_store, _ = get_stores()
+
+    try:
+        config = task_store.get_config()
+        if not config.jira.is_configured():
+            print("Jira not configured. Run 'overseer jira setup' first.", file=sys.stderr)
+            return 1
+
+        task = task_store.get_task(args.task_id)
+        if not task:
+            print(f"Task {args.task_id} not found.", file=sys.stderr)
+            return 1
+
+        if task.jira_key:
+            print(f"Task {args.task_id} is already linked to {task.jira_key}.", file=sys.stderr)
+            return 1
+
+        project_key = args.project or config.jira.project_key
+        if not project_key:
+            print(
+                "No project key specified and no default configured.\n"
+                "Use --project or run 'overseer jira setup' with a default project.",
+                file=sys.stderr,
+            )
+            return 1
+
+        from .jira import JiraClient, JiraClientError
+
+        # Map TaskType to Jira issue type
+        type_mapping = {
+            TaskType.BUG: "Bug",
+            TaskType.FEATURE: "Story",
+            TaskType.DEBT: "Task",
+            TaskType.CHORE: "Task",
+        }
+        issue_type = type_mapping.get(task.type, "Task")
+
+        async def create_issue():
+            async with JiraClient(
+                config.jira.url, config.jira.email, config.jira.api_token
+            ) as client:
+                return await client.create_issue(
+                    project_key=project_key,
+                    summary=task.title,
+                    issue_type=issue_type,
+                    description=task.context,
+                )
+
+        try:
+            issue = asyncio.run(create_issue())
+            # Link the task to the new Jira issue
+            task_store.update_task(args.task_id, jira_key=issue.key)
+            print(f"Created {issue.key}: {issue.summary}")
+            print(f"Linked to {args.task_id}")
+            return 0
+        except JiraClientError as e:
+            print(f"Jira error: {e}", file=sys.stderr)
+            return 1
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_jira(args: argparse.Namespace) -> int:
     """Handle jira subcommand dispatch."""
     if args.jira_command == "setup":
@@ -497,8 +566,10 @@ def cmd_jira(args: argparse.Namespace) -> int:
         return cmd_jira_pull(args)
     elif args.jira_command == "sync":
         return cmd_jira_sync(args)
+    elif args.jira_command == "push":
+        return cmd_jira_push(args)
     else:
-        print("Usage: overseer jira {setup|pull|sync}", file=sys.stderr)
+        print("Usage: overseer jira {setup|pull|sync|push}", file=sys.stderr)
         return 1
 
 
@@ -616,6 +687,11 @@ def main() -> int:
     # jira sync
     jira_sync_parser = jira_subparsers.add_parser("sync", help="Sync task status to Jira")
     jira_sync_parser.add_argument("task_id", help="Task ID to sync")
+
+    # jira push
+    jira_push_parser = jira_subparsers.add_parser("push", help="Push task to Jira as new issue")
+    jira_push_parser.add_argument("task_id", help="Task ID to push")
+    jira_push_parser.add_argument("--project", "-p", help="Jira project key")
 
     args = parser.parse_args()
 
