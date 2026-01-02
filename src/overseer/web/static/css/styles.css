@@ -1,0 +1,237 @@
+/* Overseer Web Frontend Styles */
+
+/* View Toggle */
+.view-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.view-toggle button {
+    padding: 0.5rem 1rem;
+    margin: 0;
+}
+
+.view-toggle button.active {
+    background-color: var(--primary);
+    color: var(--primary-inverse);
+}
+
+/* Kanban Board */
+.kanban-board {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    min-height: 70vh;
+}
+
+.kanban-column {
+    background: var(--card-background-color);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.kanban-column-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--muted-border-color);
+}
+
+.kanban-column-header h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted-color);
+}
+
+.kanban-column-tasks {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-height: 100px;
+}
+
+/* Task Card */
+.task-card {
+    margin: 0;
+    padding: 0.75rem;
+    background: var(--background-color);
+    border: 1px solid var(--muted-border-color);
+    cursor: grab;
+}
+
+.task-card:active {
+    cursor: grabbing;
+}
+
+.task-card header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 0;
+    margin-bottom: 0.5rem;
+    background: none;
+}
+
+.task-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.task-id {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--muted-color);
+}
+
+.task-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.task-context {
+    display: block;
+    color: var(--muted-color);
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+}
+
+.task-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.file-tag {
+    background: var(--muted-border-color);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-family: monospace;
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    color: var(--muted-color);
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    width: auto;
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.delete-btn:hover {
+    color: var(--del-color);
+}
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-feature { background: #dbeafe; color: #1d4ed8; }
+.badge-bug { background: #fee2e2; color: #dc2626; }
+.badge-debt { background: #fef3c7; color: #d97706; }
+.badge-chore { background: #e5e7eb; color: #4b5563; }
+.badge-warning { background: #fef3c7; color: #d97706; }
+.badge-success { background: #d1fae5; color: #059669; }
+.badge-jira { background: #e0e7ff; color: #4338ca; }
+
+/* List View */
+.task-table {
+    width: 100%;
+}
+
+.task-table th {
+    text-align: left;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted-color);
+}
+
+.task-row .task-title {
+    margin: 0;
+}
+
+.status-select {
+    padding: 0.25rem 0.5rem;
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--muted-color);
+}
+
+/* Sortable styles */
+.sortable-ghost {
+    opacity: 0.4;
+}
+
+.sortable-chosen {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Modal adjustments */
+dialog article {
+    max-width: 500px;
+}
+
+dialog article footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* Nav active state */
+nav a.active {
+    font-weight: 600;
+}
+
+/* Small button variant */
+button.small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .kanban-board {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .kanban-board {
+        grid-template-columns: 1fr;
+    }
+
+    .view-toggle {
+        justify-content: center;
+    }
+}
+
+/* Text utilities */
+.text-muted {
+    color: var(--muted-color);
+}

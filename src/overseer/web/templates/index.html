@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="view-toggle">
+    <button
+        hx-get="/partials/kanban"
+        hx-target="#task-view"
+        hx-swap="innerHTML"
+        class="{% if view == 'kanban' %}active{% endif %}">
+        Kanban
+    </button>
+    <button
+        hx-get="/partials/list"
+        hx-target="#task-view"
+        hx-swap="innerHTML"
+        class="{% if view == 'list' %}active{% endif %}">
+        List
+    </button>
+</div>
+
+<div id="task-view">
+    {% if view == 'kanban' %}
+        {% include "components/kanban.html" %}
+    {% else %}
+        {% include "components/list.html" with context %}
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    initSortable();
+});
+
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    if (event.detail.target.id === 'task-view') {
+        initSortable();
+    }
+});
+
+function initSortable() {
+    document.querySelectorAll('.kanban-column-tasks').forEach(function(column) {
+        new Sortable(column, {
+            group: 'tasks',
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            onEnd: function(evt) {
+                const taskId = evt.item.dataset.taskId;
+                const newStatus = evt.to.dataset.status;
+
+                htmx.ajax('PATCH', '/tasks/' + taskId + '/status', {
+                    target: evt.item,
+                    swap: 'outerHTML',
+                    values: { status: newStatus }
+                });
+            }
+        });
+    });
+}
+
+// Close modal after successful task creation
+document.body.addEventListener('htmx:afterRequest', function(event) {
+    if (event.detail.elt.id === 'task-form' && event.detail.successful) {
+        document.getElementById('task-modal').close();
+        // Refresh the view
+        htmx.ajax('GET', '/partials/kanban', { target: '#task-view', swap: 'innerHTML' });
+    }
+});
+</script>
+{% endblock %}

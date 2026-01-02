@@ -1,0 +1,49 @@
+<div class="kanban-board">
+    <div class="kanban-column" data-status="active">
+        <div class="kanban-column-header">
+            <h4>Active</h4>
+            <span class="badge">{{ tasks_by_status.active|length }}</span>
+        </div>
+        <div class="kanban-column-tasks" data-status="active">
+            {% for task in tasks_by_status.active %}
+                {% include "components/task_card.html" %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="kanban-column" data-status="backlog">
+        <div class="kanban-column-header">
+            <h4>Backlog</h4>
+            <span class="badge">{{ tasks_by_status.backlog|length }}</span>
+        </div>
+        <div class="kanban-column-tasks" data-status="backlog">
+            {% for task in tasks_by_status.backlog %}
+                {% include "components/task_card.html" %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="kanban-column" data-status="blocked">
+        <div class="kanban-column-header">
+            <h4>Blocked</h4>
+            <span class="badge badge-warning">{{ tasks_by_status.blocked|length }}</span>
+        </div>
+        <div class="kanban-column-tasks" data-status="blocked">
+            {% for task in tasks_by_status.blocked %}
+                {% include "components/task_card.html" %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="kanban-column" data-status="done">
+        <div class="kanban-column-header">
+            <h4>Done</h4>
+            <span class="badge badge-success">{{ tasks_by_status.done|length }}</span>
+        </div>
+        <div class="kanban-column-tasks" data-status="done">
+            {% for task in tasks_by_status.done %}
+                {% include "components/task_card.html" %}
+            {% endfor %}
+        </div>
+    </div>
+</div>

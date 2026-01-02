@@ -2,6 +2,44 @@
 
 This file provides guidance to Claude Code when working with the Overseer project.
 
+## Required: Use Overseer MCP for Task Management
+
+**You MUST use the Overseer MCP tools instead of the built-in TodoWrite tool for all task tracking in this project.**
+
+### Before Starting Any Work
+
+1. **Check active tasks first**: Call `mcp__overseer__read_active_tasks` to see what's currently being worked on
+2. **Check for scope drift**: Call `mcp__overseer__check_drift` with the user's request to verify the work aligns with tracked tasks
+   - If no match is found, ask the user if they want to create a new task before proceeding
+   - If a weak match (40-80%), confirm which task this relates to
+
+### During Work
+
+3. **Create tasks for new work**: Use `mcp__overseer__create_task` to track new features, bugs, or chores
+   - Always specify `type`: `feature`, `bug`, `debt`, or `chore`
+   - Include `context` with implementation notes
+   - Add `linked_files` for relevant source files
+
+4. **Update task status**: Use `mcp__overseer__update_task_status` to mark tasks as:
+   - `active` - currently being worked on
+   - `blocked` - waiting on something
+   - `done` - completed
+
+### After Completing Work
+
+5. **Log work sessions**: Call `mcp__overseer__log_work_session` with:
+   - A brief `summary` of what was accomplished
+   - The `task_id` if work was for a specific task
+   - List of `files_touched` that were modified
+
+### Jira Integration (if configured)
+
+- Use `mcp__overseer__pull_jira_issues` to see assigned Jira issues
+- Use `mcp__overseer__link_jira_issue` to connect local tasks to Jira
+- Use `mcp__overseer__sync_jira_status` to push status updates to Jira
+
+---
+
 ## Project Overview
 
 **Overseer** is "The Invisible Project Manager" - a local-first project management tool designed for AI-assisted development workflows. It stays out of the way until needed, capturing data automatically via MCP and serving it back via a lightweight dashboard.

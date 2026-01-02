@@ -1,0 +1,40 @@
+<tr class="task-row" data-task-id="{{ task.id }}">
+    <td><code>{{ task.id }}</code></td>
+    <td>
+        <span class="task-title">{{ task.title }}</span>
+        {% if task.context %}
+        <br><small class="task-context">{{ task.context[:50] }}{% if task.context|length > 50 %}...{% endif %}</small>
+        {% endif %}
+    </td>
+    <td><span class="badge badge-{{ task.type.value }}">{{ task.type.value }}</span></td>
+    <td>
+        <select
+            class="status-select"
+            hx-patch="/tasks/{{ task.id }}/status"
+            hx-target="closest tr"
+            hx-swap="outerHTML"
+            name="status">
+            <option value="active" {% if task.status.value == 'active' %}selected{% endif %}>Active</option>
+            <option value="backlog" {% if task.status.value == 'backlog' %}selected{% endif %}>Backlog</option>
+            <option value="blocked" {% if task.status.value == 'blocked' %}selected{% endif %}>Blocked</option>
+            <option value="done" {% if task.status.value == 'done' %}selected{% endif %}>Done</option>
+        </select>
+    </td>
+    <td>
+        {% if task.jira_key %}
+        <span class="badge badge-jira">{{ task.jira_key }}</span>
+        {% else %}
+        <span class="text-muted">-</span>
+        {% endif %}
+    </td>
+    <td>
+        <button
+            class="secondary outline small"
+            hx-delete="/tasks/{{ task.id }}"
+            hx-target="closest tr"
+            hx-swap="outerHTML"
+            hx-confirm="Delete {{ task.id }}?">
+            Delete
+        </button>
+    </td>
+</tr>

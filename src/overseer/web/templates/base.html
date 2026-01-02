@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overseer - {% block title %}Tasks{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="/static/js/htmx.min.js"></script>
+    <script src="/static/js/sortable.min.js"></script>
+</head>
+<body>
+    <nav class="container-fluid">
+        <ul>
+            <li><strong>Overseer</strong></li>
+        </ul>
+        <ul>
+            <li><a href="/tasks?view=kanban" {% if view == 'kanban' %}class="active"{% endif %}>Kanban</a></li>
+            <li><a href="/tasks?view=list" {% if view == 'list' %}class="active"{% endif %}>List</a></li>
+            <li>
+                <button
+                    class="secondary outline"
+                    hx-get="/tasks/new"
+                    hx-target="#modal-content"
+                    hx-swap="innerHTML"
+                    onclick="document.getElementById('task-modal').showModal()">
+                    + New Task
+                </button>
+            </li>
+        </ul>
+    </nav>
+
+    <main class="container-fluid">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Modal container -->
+    <dialog id="task-modal">
+        <article>
+            <header>
+                <button
+                    aria-label="Close"
+                    rel="prev"
+                    onclick="document.getElementById('task-modal').close()">
+                </button>
+                <h3>New Task</h3>
+            </header>
+            <div id="modal-content">
+                <!-- Task form loads here via HTMX -->
+            </div>
+        </article>
+    </dialog>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

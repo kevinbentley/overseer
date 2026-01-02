@@ -1,0 +1,21 @@
+<table class="task-table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Jira</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for task in tasks %}
+            {% include "components/task_row.html" %}
+        {% else %}
+        <tr>
+            <td colspan="6" class="empty-state">No tasks yet. Create one to get started!</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

@@ -1,0 +1,35 @@
+<article class="task-card" data-task-id="{{ task.id }}">
+    <header>
+        <div class="task-card-header">
+            <span class="task-id">{{ task.id }}</span>
+            <span class="task-type badge badge-{{ task.type.value }}">{{ task.type.value }}</span>
+        </div>
+        <button
+            class="delete-btn"
+            hx-delete="/tasks/{{ task.id }}"
+            hx-target="closest article"
+            hx-swap="outerHTML"
+            hx-confirm="Delete {{ task.id }}?">
+            &times;
+        </button>
+    </header>
+    <p class="task-title">{{ task.title }}</p>
+    {% if task.context %}
+    <small class="task-context">{{ task.context }}</small>
+    {% endif %}
+    {% if task.jira_key %}
+    <div class="task-jira">
+        <span class="badge badge-jira">{{ task.jira_key }}</span>
+    </div>
+    {% endif %}
+    {% if task.linked_files %}
+    <div class="task-files">
+        {% for file in task.linked_files[:2] %}
+        <small class="file-tag">{{ file | replace("src/", "") }}</small>
+        {% endfor %}
+        {% if task.linked_files|length > 2 %}
+        <small class="file-tag">+{{ task.linked_files|length - 2 }} more</small>
+        {% endif %}
+    </div>
+    {% endif %}
+</article>

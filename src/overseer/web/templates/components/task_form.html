@@ -1,0 +1,36 @@
+<form id="task-form" hx-post="/tasks" hx-swap="none">
+    <label for="title">
+        Title
+        <input type="text" id="title" name="title" placeholder="What needs to be done?" required>
+    </label>
+
+    <div class="grid">
+        <label for="task_type">
+            Type
+            <select id="task_type" name="task_type" required>
+                {% for t in task_types %}
+                <option value="{{ t }}">{{ t | capitalize }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label for="status">
+            Status
+            <select id="status" name="status">
+                {% for s in statuses %}
+                <option value="{{ s }}" {% if s == 'backlog' %}selected{% endif %}>{{ s | capitalize }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
+
+    <label for="context">
+        Context (optional)
+        <textarea id="context" name="context" placeholder="Additional details, notes, or implementation hints..."></textarea>
+    </label>
+
+    <footer>
+        <button type="button" class="secondary" onclick="document.getElementById('task-modal').close()">Cancel</button>
+        <button type="submit">Create Task</button>
+    </footer>
+</form>
