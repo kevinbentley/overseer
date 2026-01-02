@@ -9,6 +9,7 @@ from mcp.types import Tool, TextContent
 
 from .store import JsonTaskStore, SessionStore
 from .models import TaskStatus, TaskType, Origin
+from .drift import DriftDetector
 
 
 def get_root_path() -> Path:
@@ -129,6 +130,20 @@ async def list_tools() -> list[Tool]:
                 "required": ["summary"],
             },
         ),
+        Tool(
+            name="check_drift",
+            description="Check if a user request matches any active task. Use this to detect scope drift before starting work. Returns match information or suggests creating a new task.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The user's request or prompt to check against active tasks.",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        ),
     ]
 
 
@@ -145,6 +160,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return await handle_update_task_status(task_store, arguments)
     elif name == "log_work_session":
         return await handle_log_work_session(session_store, arguments)
+    elif name == "check_drift":
+        return await handle_check_drift(task_store, arguments)
     else:
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -265,6 +282,74 @@ async def handle_log_work_session(
         return [TextContent(type="text", text=f"Error: {e}")]
     except Exception as e:
         return [TextContent(type="text", text=f"Error logging session: {e}")]
+
+
+async def handle_check_drift(
+    store: JsonTaskStore, arguments: dict
+) -> list[TextContent]:
+    """Handle check_drift tool call."""
+    try:
+        prompt = arguments["prompt"]
+
+        # Get active tasks for comparison
+        active_tasks = store.list_tasks(status=TaskStatus.ACTIVE)
+
+        if not active_tasks:
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "No active tasks found.\n"
+                        "This appears to be new work. Consider creating a task first with create_task."
+                    ),
+                )
+            ]
+
+        # Run drift detection
+        detector = DriftDetector(active_tasks)
+        result = detector.check_drift(prompt)
+
+        # Format response based on match strength
+        if result.match_strength.value == "strong":
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"✓ Strong match found!\n"
+                        f"{result.format_result()}\n\n"
+                        f"Proceed with the work."
+                    ),
+                )
+            ]
+        elif result.match_strength.value == "weak":
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"~ Possible match found.\n"
+                        f"{result.format_result()}\n\n"
+                        f"This might be related to the matched task. "
+                        f"Proceed, but confirm if this is the intended work."
+                    ),
+                )
+            ]
+        else:
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"⚠ No matching task found - possible scope drift!\n\n"
+                        f"Suggested title: {result.suggested_title}\n\n"
+                        f"Before proceeding, ask the user:\n"
+                        f'"This looks like new work. Should I add \'{result.suggested_title}\' to the backlog first?"'
+                    ),
+                )
+            ]
+
+    except FileNotFoundError as e:
+        return [TextContent(type="text", text=f"Error: {e}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error checking drift: {e}")]
 
 
 async def run_server():

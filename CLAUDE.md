@@ -16,7 +16,8 @@ This file provides guidance to Claude Code when working with the Overseer projec
 │   ├── server.py               # MCP server implementation
 │   ├── cli.py                  # CLI interface
 │   ├── models/                 # Data models (Task, WorkSession, Config)
-│   └── store/                  # JSON store implementation
+│   ├── store/                  # JSON store implementation
+│   └── drift/                  # Drift detection logic
 ├── tests/                      # pytest test suite
 └── .claude/agents/             # Specialized agent definitions
 ```
@@ -49,6 +50,7 @@ overseer block TASK-2 --reason "..."  # Mark task as blocked
 overseer activate TASK-3             # Move to active
 overseer log "Summary" --task TASK-1  # Log work session
 overseer report --today              # Daily report
+overseer standup                     # Daily standup report
 overseer serve                       # Start MCP server
 ```
 
@@ -60,6 +62,7 @@ When the MCP server is connected, these tools are available:
 - **create_task** - Create new tasks with type, context, linked files
 - **update_task_status** - Change task status (done, blocked, etc.)
 - **log_work_session** - Record work summaries with file tracking
+- **check_drift** - Check if a prompt matches active tasks (drift detection)
 
 ## Data Store
 
@@ -76,9 +79,16 @@ Data is stored in `.overseer/` directory:
 - **Origin**: `human` or `agent`
 
 ### Drift Check Workflow
-1. AI calls `read_active_tasks` before generating code
-2. If prompt matches active task, proceed
-3. If prompt is new, ask user to create a task first
+1. AI calls `check_drift` with the user's prompt
+2. If strong match (>80%): proceed with the work
+3. If weak match (40-80%): proceed but confirm the task
+4. If no match (<40%): ask user to create a task first
+
+**Matching strategies:**
+- Explicit task references (TASK-1)
+- Keyword overlap with title/context
+- File context matching (linked_files)
+- Task type inference (bug, feature, etc.)
 
 ## Specialized Agents
 
