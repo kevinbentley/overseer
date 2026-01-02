@@ -355,32 +355,38 @@ You have access to Overseer project management tools.
 
 ## Implementation Order
 
-### Milestone 1: Core Data Layer
-1. [ ] Project setup (`pyproject.toml`, package structure)
-2. [ ] Data models (Task, WorkSession, Config)
-3. [ ] JSON store implementation
-4. [ ] Unit tests for store
+### Milestone 1: Core Data Layer ✅
+1. [x] Project setup (`pyproject.toml`, package structure)
+2. [x] Data models (Task, WorkSession, Config)
+3. [x] JSON store implementation
+4. [x] Unit tests for store
 
-### Milestone 2: MCP Server
-5. [ ] Basic MCP server setup
-6. [ ] `read_active_tasks` tool
-7. [ ] `create_task` tool
-8. [ ] `update_task_status` tool
-9. [ ] `log_work_session` tool
-10. [ ] Integration tests
+### Milestone 2: MCP Server ✅
+5. [x] Basic MCP server setup
+6. [x] `read_active_tasks` tool
+7. [x] `create_task` tool
+8. [x] `update_task_status` tool
+9. [x] `log_work_session` tool
+10. [x] Unit tests (15 passing)
 
-### Milestone 3: CLI
-11. [ ] `overseer init` command
-12. [ ] `overseer tasks` command
-13. [ ] `overseer add`/`done`/`block` commands
-14. [ ] `overseer report` command
-15. [ ] `overseer serve` command
+### Milestone 3: CLI ✅
+11. [x] `overseer init` command
+12. [x] `overseer tasks` command
+13. [x] `overseer add`/`done`/`block`/`activate` commands
+14. [x] `overseer report` command
+15. [x] `overseer serve` command
 
-### Milestone 4: Integration
-16. [ ] Claude Code MCP configuration
-17. [ ] System prompt snippet
-18. [ ] End-to-end testing
-19. [ ] Documentation
+### Milestone 4: Integration ✅
+16. [x] Claude Code MCP configuration (`mcp.json`)
+17. [x] System prompt snippet (in CLAUDE.md)
+18. [x] End-to-end CLI testing
+19. [x] Documentation updated
+
+### Future Work
+- [ ] Web dashboard
+- [ ] Semantic drift detection
+- [ ] Git branch integration
+- [ ] VS Code extension
 
 ---
 

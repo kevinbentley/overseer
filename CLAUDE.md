@@ -6,66 +6,89 @@ This file provides guidance to Claude Code when working with the Overseer projec
 
 **Overseer** is "The Invisible Project Manager" - a local-first project management tool designed for AI-assisted development workflows. It stays out of the way until needed, capturing data automatically via MCP and serving it back via a lightweight dashboard.
 
-**Current Status**: Design/specification phase. No implementation code exists yet.
-
 ## Repository Structure
 
 ```
 /
-├── README.md                    # MVP roadmap, phase definitions, feature specs
-└── .claude/
-    └── agents/
-        ├── mcp-server-architect.md   # MCP server implementation guidance
-        ├── task-schema-designer.md   # Data model and schema design
-        └── drift-detector.md         # Scope drift detection logic
+├── pyproject.toml              # Python package configuration
+├── mcp.json                    # MCP server configuration for Claude Code
+├── src/overseer/
+│   ├── server.py               # MCP server implementation
+│   ├── cli.py                  # CLI interface
+│   ├── models/                 # Data models (Task, WorkSession, Config)
+│   └── store/                  # JSON store implementation
+├── tests/                      # pytest test suite
+└── .claude/agents/             # Specialized agent definitions
 ```
+
+## Build Commands
+
+```bash
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
+
+# Initialize Overseer in a project
+overseer init
+
+# Start MCP server
+overseer serve
+```
+
+## CLI Commands
+
+```bash
+overseer init                        # Initialize .overseer/ directory
+overseer tasks                       # List active tasks
+overseer tasks --all                 # List all tasks
+overseer add "Title" --type feature  # Add a new task
+overseer done TASK-1                 # Mark task as done
+overseer block TASK-2 --reason "..."  # Mark task as blocked
+overseer activate TASK-3             # Move to active
+overseer log "Summary" --task TASK-1  # Log work session
+overseer report --today              # Daily report
+overseer serve                       # Start MCP server
+```
+
+## MCP Tools
+
+When the MCP server is connected, these tools are available:
+
+- **read_active_tasks** - Query tasks with optional status filter
+- **create_task** - Create new tasks with type, context, linked files
+- **update_task_status** - Change task status (done, blocked, etc.)
+- **log_work_session** - Record work summaries with file tracking
+
+## Data Store
+
+Data is stored in `.overseer/` directory:
+- `tasks.json` - Task list with status, type, context, linked files
+- `config.json` - Project configuration
+- `sessions/YYYY-MM-DD.json` - Daily work session logs
 
 ## Core Concepts
 
 ### Tasks
-Work items with structured metadata:
 - **Status**: `active`, `backlog`, `done`, `blocked`
 - **Type**: `feature`, `bug`, `debt`, `chore`
 - **Origin**: `human` or `agent`
-- **Linked files**: Associated source files
 
-### Work Sessions
-Logged interactions capturing:
-- Summary of completed work
-- Files touched during session
-- Timestamps for timeline reconstruction
-
-### Drift Check
-The signature workflow that prevents scope creep:
+### Drift Check Workflow
 1. AI calls `read_active_tasks` before generating code
 2. If prompt matches active task, proceed
 3. If prompt is new, ask user to create a task first
 
-### MCP Tools (Planned)
-- `read_active_tasks` - Retrieve current task list
-- `create_task` - Log bugs and feature requests
-- `update_task_status` - Mark tasks as done
-- `log_work_session` - Record work summaries
-
 ## Specialized Agents
 
-Use these agents for domain-specific guidance:
-
-- **mcp-server-architect** - For implementing the MCP server, defining tools, configuring Claude Code integration
-- **task-schema-designer** - For designing the `.overseer/` data store schemas (JSON or SQLite)
-- **drift-detector** - For implementing and tuning the drift check workflow
-
-## Planned Technology
-
-- **MCP Server**: Python (`mcp` SDK)
-- **Data Store**: `.overseer/` directory with JSON files or SQLite database
-- **Dashboard**: Localhost web UI or VS Code Webview
-- **Transport**: Stdio for local, SSE for remote
+- **mcp-server-architect** - MCP server implementation guidance
+- **task-schema-designer** - Data model and schema design
+- **drift-detector** - Scope drift detection logic
 
 ## Development Notes
 
-When implementation begins:
-- Start with the MCP server - it's the most critical MVP component
-- Use the agent specs in `.claude/agents/` for detailed implementation patterns
-- The data store should be git-trackable and work offline
-- Prioritize the "Drift Check" workflow as the key differentiating feature
+- All data is git-trackable JSON files with sorted keys
+- Atomic file writes prevent corruption
+- The `.overseer/` directory should be committed to git
+- Set `OVERSEER_ROOT` environment variable to specify project root
